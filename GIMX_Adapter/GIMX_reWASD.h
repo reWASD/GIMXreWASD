@@ -13,7 +13,7 @@
 *    reWASD team wants to express special thanks to Mathieu Laurendeau for his hard work on GIMX project and developing this adapter!
 *    Now reWASD is an alternative way to use this adapter and give more options to users.
 *
-*    (C) 2020 Disc Soft Ltd.
+*    (C) 2021 Disc Soft Ltd.
 */
 
 #ifndef REWASD_GIMX_PROTOCOL_H_
