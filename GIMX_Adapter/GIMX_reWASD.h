@@ -21,7 +21,7 @@
 
 //Current version of reWASD firmware in the adapter.
 #define REWASD_GIMX_MAJOR_VERSION        1
-#define REWASD_GIMX_MINOR_VERSION        1
+#define REWASD_GIMX_MINOR_VERSION        2
 
 //This is internal value to identify the board as GIMX adapter based on atmega32u4 chip.
 #define REWASD_GIMX_BOARD_TYPE           0xC1
@@ -102,8 +102,7 @@ typedef enum _REWASD_GIMX_PACKET_TYPE {
 
 #define REWASD_GIMX_MAX_PACKET_VALUE_SIZE (REWASD_GIMX_MAX_PACKET_SIZE - 2) //253
 
-typedef struct _REWASD_GIMX_PACKET
-{
+typedef struct _REWASD_GIMX_PACKET {
     //Type of packet - size of payload is encoded in the command.
     uint8_t type;
     //Contains up to 253 bytes of payload.

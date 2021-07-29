@@ -38,17 +38,27 @@ static uint8_t receive_buf[REWASD_GIMX_RECEIVE_BUFFER_SIZE];
 //The firmware stores this value in byte 0 of control packet and compares with byte 0 of CONTROL packet reply returned by reWASD.
 static uint8_t control_sequence = 0;
 
-// Buffer for incoming CONTROL endpoint request and for reply from reWASD.
+//Buffer for incoming CONTROL endpoint request and for reply from reWASD.
 //Note that byte 0 contains control_sequence (see comments above).
 static uint8_t control_buf[sizeof(USB_ControlRequest) + REWASD_GIMX_MAX_PACKET_SIZE_EP0 + 1];
 
-static uint8_t input_buf[REWASD_GIMX_MAX_PAYLOAD_SIZE_EP];
+//Buffer with pending data for IN report.
+//It will be transferred to host immediately when the pipe becomes ready.
+static uint8_t input_buf1[REWASD_GIMX_MAX_PAYLOAD_SIZE_EP];
+ //Buffer where next IN report is prepared if current report in input_buf1 was not yet sent to host.
+//If new IN report from reWASD arrives but input_buf1 was still not transferred then its contents are moved to input_buf1 and new data is prepared in input_buf2.
+//So these buffers act like FIFO with 2 entries and only 2 last IN reports are kept if host cannot retrieve them as fast as they arrive.
+static uint8_t input_buf2[REWASD_GIMX_MAX_PAYLOAD_SIZE_EP];
+
+// Size of valid data in input_buf1 if IN report is pending. It will be transferred to host when the pipe becomes ready.
+static uint8_t inputDataLen1 = 0;
+// Size of valid data in input_buf2 if new report is ready but current report in input_buf1 was not yet sent to host.
+static uint8_t inputDataLen2 = 0;
+
 static uint8_t out_buf[REWASD_GIMX_MAX_PAYLOAD_SIZE_EP];
 
 static uint8_t inEndpoint = 0;
 static uint8_t outEndpoint = 0;
-
-static uint8_t inputDataLen = 0;
 
 static bool waiting_control_reply = false;
 
@@ -109,7 +119,7 @@ ISR(USART1_RX_vect)
     } while (Serial_IsCharReceived());
 }
 
-//Clalled from USB_USBTask.
+//Called from USB_USBTask.
 void EVENT_USB_Device_ConfigurationChanged(void)
 {
     PREWASD_GIMX_DESCRIPTOR_HEADER header = (PREWASD_GIMX_DESCRIPTOR_HEADER)descriptors;
@@ -126,6 +136,7 @@ void EVENT_USB_Device_ConfigurationChanged(void)
         ep[0] = 0;
     }
 
+    //NOTE: AVR8 does not support sharing IN and OUT endpoints with same address, so we check this below.
     if ((header->OutEndpoint & ENDPOINT_EPNUM_MASK) &&
         (header->OutEndpoint & ENDPOINT_EPNUM_MASK) != (header->InEndpoint & ENDPOINT_DIR_MASK) &&
         (header->OutEndpoint & ENDPOINT_DIR_MASK) == ENDPOINT_DIR_OUT)
@@ -136,7 +147,6 @@ void EVENT_USB_Device_ConfigurationChanged(void)
     {//OUT endpoint is invalid
         ep[1] = 0;
     }
-
 
     if ((ep[0] & ENDPOINT_EPNUM_MASK) > (ep[1] & ENDPOINT_EPNUM_MASK))
     {//swap endpoints because firmware is compiled with ORDERED_EP_CONFIG and endpoints must be in ascending order
@@ -272,7 +282,37 @@ void SendNextInput(void)
         {
             minlen = (Cmd - REWASD_GIMX_PACKET_TYPE_REPORT) + 1;
 
-            target_buf = input_buf;
+            if (inputDataLen2)
+            {//Old IN report was still not transferred to host but 3rd packet arrives already.
+                if (use_debug)
+                {
+                    //Send debug packet to indicate IN packet overflow (reWASD needs throttling)
+                    uint8_t dbg[1];
+
+                    dbg[0] = 0x33;
+
+                    send_buffer_with_crc(REWASD_GIMX_PACKET_TYPE_DEBUG + sizeof(dbg), dbg, sizeof(dbg));
+                }
+
+                //Copy data of second packet to current (its data will be lost) and prepare new data in input_buf2.
+                //So if reWASD sends reports faster than the host retrieves them, then only 2 last actual IN reports will be kept.
+                memcpy(input_buf1, input_buf2, inputDataLen2);
+
+                inputDataLen1 = inputDataLen2;
+
+                inputDataLen2 = 0;
+            }
+
+            if (inputDataLen1)
+            {
+                //Prepare IN report in the second buffer because the first one is still not transferred.
+                target_buf = input_buf2;
+            }
+            else
+            {
+                //Prepare IN report in the first buffer directly as it has no data pending.
+                target_buf = input_buf1;
+            }
         }
         else if (Cmd >= REWASD_GIMX_PACKET_TYPE_CONTROL &&
             Cmd <= (REWASD_GIMX_PACKET_TYPE_CONTROL + 0x40))
@@ -369,7 +409,14 @@ void SendNextInput(void)
                 }
                 else
                 {//IN
-                    inputDataLen = minlen;
+                    if (inputDataLen1)
+                    {//update length of second buffer
+                        inputDataLen2 = minlen;
+                    }
+                    else
+                    {//update length of first buffer
+                        inputDataLen1 = minlen;
+                    }
                 }
 
                 receive_start += (minlen + 2);
@@ -414,21 +461,21 @@ void SendNextInput(void)
         }
     }
 
-    if (USB_DeviceState == DEVICE_STATE_Configured && inEndpoint && inputDataLen)
+    if (USB_DeviceState == DEVICE_STATE_Configured && inEndpoint && inputDataLen1)
     {
         Endpoint_SelectEndpoint(inEndpoint);
 
         if (Endpoint_IsINReady())
         {
-            uint8_t* buffer = input_buf;
+            uint8_t* buffer = input_buf1;
 
             while (Endpoint_IsReadWriteAllowed())
             {
                 Endpoint_Write_8(*buffer++);
 
-                inputDataLen--;
+                inputDataLen1--;
 
-                if (!inputDataLen)
+                if (!inputDataLen1)
                 {
                     break;
                 }
@@ -436,7 +483,18 @@ void SendNextInput(void)
 
             Endpoint_ClearIN();
 
-            inputDataLen = 0;
+            if (inputDataLen2)
+            {//next IN packet is already pending, copy it to input_buf1 so it will be transferred next time.
+                memcpy(input_buf1, input_buf2, inputDataLen2);
+
+                inputDataLen1 = inputDataLen2;
+
+                inputDataLen2 = 0;
+            }
+            else
+            {//no new IN packet is available
+                inputDataLen1 = 0;
+            }
         }
     }
 }
