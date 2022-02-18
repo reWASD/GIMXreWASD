@@ -30,7 +30,7 @@ static uint8_t version_buffer[64] = { 'r', 'e', 'W', 'A', 'S', 'D', REWASD_GIMX_
 #define REWASD_GIMX_RECEIVE_BUFFER_SIZE 256
 
 //Circular buffer for USART reception.
-//This size is exectly 256 bytes in order for receive_start and receive_end to wrap automatically to 0 on overflow.
+//This size is exactly 256 bytes in order for receive_start and receive_end to wrap automatically to 0 on overflow.
 static uint8_t receive_buf[REWASD_GIMX_RECEIVE_BUFFER_SIZE];
 
 //This value is used to verify that reWASD reply to control packet refers to the same original request.
@@ -45,14 +45,14 @@ static uint8_t control_buf[sizeof(USB_ControlRequest) + REWASD_GIMX_MAX_PACKET_S
 //Buffer with pending data for IN report.
 //It will be transferred to host immediately when the pipe becomes ready.
 static uint8_t input_buf1[REWASD_GIMX_MAX_PAYLOAD_SIZE_EP];
- //Buffer where next IN report is prepared if current report in input_buf1 was not yet sent to host.
+//Buffer where next IN report is prepared if current report in input_buf1 was not yet sent to host.
 //If new IN report from reWASD arrives but input_buf1 was still not transferred then its contents are moved to input_buf1 and new data is prepared in input_buf2.
 //So these buffers act like FIFO with 2 entries and only 2 last IN reports are kept if host cannot retrieve them as fast as they arrive.
 static uint8_t input_buf2[REWASD_GIMX_MAX_PAYLOAD_SIZE_EP];
 
-// Size of valid data in input_buf1 if IN report is pending. It will be transferred to host when the pipe becomes ready.
+//Size of valid data in input_buf1 if IN report is pending. It will be transferred to host when the pipe becomes ready.
 static uint8_t inputDataLen1 = 0;
-// Size of valid data in input_buf2 if new report is ready but current report in input_buf1 was not yet sent to host.
+//Size of valid data in input_buf2 if new report is ready but current report in input_buf1 was not yet sent to host.
 static uint8_t inputDataLen2 = 0;
 
 static uint8_t out_buf[REWASD_GIMX_MAX_PAYLOAD_SIZE_EP];
@@ -89,7 +89,6 @@ void send_buffer_with_crc(uint8_t type, uint8_t* data, uint8_t len)
 
     //Reset keep-alive timer
     TCNT1 = 0;
-
 }
 
 //This routine is called after hardware reset or on REWASD_GIMX_PACKET_TYPE_VERSION when device has not yet started.

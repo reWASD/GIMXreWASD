@@ -56,15 +56,14 @@ typedef struct _REWASD_GIMX_DESCRIPTOR_INDEX {
 #define REWASD_GIMX_FLAG_DEBUG           0x0001
 
 //This header is transmitted by reWASD on first REWASD_GIMX_PACKET_TYPE_DESCRIPTORS packet.
-//The header is followed by descriptors indexes and descriptors.
+//The header is followed by descriptors.
 typedef struct _REWASD_GIMX_DESCRIPTOR_HEADER {
-    //Total size of data incuding this header, indexes, endpoints and all descriptors.
+    //Total size of data incuding this header and all descriptors.
     //It should not exceed REWASD_GIMX_MAX_DESCRIPTORS_SIZE.
     uint16_t wTotalLength;
     uint8_t  InEndpoint;
     uint8_t  OutEndpoint;
     uint16_t flags;//REWASD_GIMX_FLAG_... definition above.
-    //Number REWASD_GIMX_DESCRIPTOR_INDEX structures following this header.
     REWASD_GIMX_DESCRIPTOR_INDEX descriptorIndex[REWASD_GIMX_MAX_DESCRIPTORS];
 }REWASD_GIMX_DESCRIPTOR_HEADER, * PREWASD_GIMX_DESCRIPTOR_HEADER;
 
