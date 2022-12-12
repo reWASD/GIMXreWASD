@@ -13,7 +13,7 @@
 *    reWASD team wants to express special thanks to Mathieu Laurendeau for his hard work on GIMX project and developing this adapter!
 *    Now reWASD is an alternative way to use this adapter and give more options to users.
 *
-*    (C) 2022 Disc Soft Ltd.
+*    (C) 2020-2022 Disc Soft Ltd.
 */
 
 #ifndef REWASD_GIMX_PROTOCOL_H_
@@ -21,7 +21,7 @@
 
 //Current version of reWASD firmware in the adapter.
 #define REWASD_GIMX_MAJOR_VERSION        1
-#define REWASD_GIMX_MINOR_VERSION        2
+#define REWASD_GIMX_MINOR_VERSION        3
 
 //This is internal value to identify the board as GIMX adapter based on atmega32u4 chip.
 #define REWASD_GIMX_BOARD_TYPE           0xC1
@@ -44,8 +44,6 @@
 
 #define REWASD_GIMX_MAX_DESCRIPTORS      8
 
-#define REWASD_GIMX_MAX_DEBUG_BYTES      8
-
 typedef struct _REWASD_GIMX_DESCRIPTOR_INDEX {
     uint16_t wLength; //if 0 zero then treated as terminator
     uint16_t wValue;
@@ -54,6 +52,9 @@ typedef struct _REWASD_GIMX_DESCRIPTOR_INDEX {
 
 //If this flag is set then firmware may send some debug packets to reWASD in case of transmission errors.
 #define REWASD_GIMX_FLAG_DEBUG           0x0001
+
+//If this flag is set then firmware can combine IN reports if they arrive faster than host retrieves them.
+#define REWASD_GIMX_FLAG_COMBINE         0x0002
 
 //This header is transmitted by reWASD on first REWASD_GIMX_PACKET_TYPE_DESCRIPTORS packet.
 //The header is followed by descriptors.
@@ -89,12 +90,14 @@ typedef enum _REWASD_GIMX_PACKET_TYPE {
     //Also if this packet is received by reWASD already after adapter was started then it indicates that adapter was restarted (USB host was replugged).
     REWASD_GIMX_PACKET_TYPE_VERSION =     0xF3,
     //Used to send debug information from adapter.
-    //This is base value for the range 0xF4 - 0xFC, which corresponds to values from 0 to 8 (REWASD_GIMX_MAX_DEBUG_BYTES) bytes.
+    //Size of payload is 2 bytes, where meaning of bytes can depend on situation.
     REWASD_GIMX_PACKET_TYPE_DEBUG =       0xF4,
-    //This command has no payload and no CRC and informs reWASD that adapter is still working.
+    //This packet has payload with 1 parameter byte containing value 0x01 and informs reWASD that adapter was connected to USB bus (configured by host).
+    //Other values of paramater are reserved.
+    REWASD_GIMX_PACKET_TYPE_CONNECT     = 0xF6,
+    //This packet has no payload and no CRC and informs reWASD that adapter is still working.
     REWASD_GIMX_PACKET_TYPE_KEEP_ALIVE =  0xFD
 }REWASD_GIMX_PACKET_TYPE, * PREWASD_GIMX_PACKET_TYPE;
-
 
 // This is the max serial packet size
 #define REWASD_GIMX_MAX_PACKET_SIZE      255

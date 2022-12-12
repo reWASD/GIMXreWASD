@@ -1,6 +1,6 @@
 /*
 *    GIMX adapter firmware for reWASD.
-*    (C) 2022 Disc Soft Ltd.
+*    (C) 2020-2022 Disc Soft Ltd.
 *
 * The code is based on the original serialusb project by Mathieu Laurendeau (see https://github.com/matlo/serialusb),
 * but was rewritten from scratch to optimize it for reWASD.
@@ -62,7 +62,7 @@ static uint8_t outEndpoint = 0;
 
 static bool waiting_control_reply = false;
 
-static bool use_debug = true;
+static bool use_debug = false;
 
 static bool started = false;
 
@@ -70,7 +70,10 @@ static bool started = false;
 static          uint8_t receive_start = 0;
 static volatile uint8_t receive_end = 0;
 
-void send_buffer_with_crc(uint8_t type, uint8_t* data, uint8_t len)
+//This is core function to send packet to reWASD.
+//It calcultes CRC automatically and adds it to end of packet.
+//NOTE: noinline attribute was added because sometimes wrong data is sent via COM port due to optimization.
+void __attribute__ ((noinline)) send_buffer_with_crc(uint8_t type, uint8_t* data, uint8_t len)
 {
     Serial_SendByte(type);
 
@@ -176,6 +179,13 @@ void EVENT_USB_Device_ConfigurationChanged(void)
             }
         }
     }
+
+    if (inEndpoint)
+    {
+        uint8_t param = 0x01;
+
+        send_buffer_with_crc(REWASD_GIMX_PACKET_TYPE_CONNECT, &param, 1);
+    }
 }
 
 //Called from USB_USBTask.
@@ -215,10 +225,24 @@ void EVENT_USB_Device_ControlRequest(void)
 
     if ((USB_ControlRequest.bmRequestType & CONTROL_REQTYPE_TYPE) == REQTYPE_STANDARD)
     {//Let LUFA handle all standard requests
-        if (!(USB_ControlRequest.bmRequestType & REQDIR_DEVICETOHOST) &&
-            USB_ControlRequest.bRequest == REQ_SetInterface)
-        {//Handle REQ_SetInterface because LUFA does not handle it
+        //Handle REQ_GetInterface and REQ_SetInterface here because LUFA does not handle them.
+        //reWASD currently supports only AltSetting 0 on main interface, which has inEndpoint and outEndpoint.
+        //So any Set Interface requests are just completed with success.
+        if (((USB_ControlRequest.bmRequestType & REQDIR_DEVICETOHOST) &&
+              USB_ControlRequest.bRequest == REQ_GetInterface)
+              ||
+            (!(USB_ControlRequest.bmRequestType & REQDIR_DEVICETOHOST) &&
+                 USB_ControlRequest.bRequest == REQ_SetInterface))
+        {
             Endpoint_ClearSETUP();
+
+            if (USB_ControlRequest.bRequest == REQ_GetInterface && USB_ControlRequest.wLength)
+            {//always return setting 0
+                uint8_t setting = 0;
+
+                Endpoint_Write_Control_Stream_LE(&setting, 1);
+            }
+
             Endpoint_ClearStatusStage();
         }
 
@@ -266,6 +290,7 @@ void SendNextInput(void)
     while (len)
     {
         uint8_t Cmd = receive_buf[receive_start];
+        uint8_t combine = false;
         uint8_t minlen;
         uint8_t* target_buf;
         uint8_t signature[6];
@@ -281,36 +306,55 @@ void SendNextInput(void)
         {
             minlen = (Cmd - REWASD_GIMX_PACKET_TYPE_REPORT) + 1;
 
-            if (inputDataLen2)
-            {//Old IN report was still not transferred to host but 3rd packet arrives already.
-                if (use_debug)
+            if (((PREWASD_GIMX_DESCRIPTOR_HEADER)descriptors)->flags & REWASD_GIMX_FLAG_COMBINE)
+            {
+                if (inputDataLen2)
                 {
-                    //Send debug packet to indicate IN packet overflow (reWASD needs throttling)
-                    uint8_t dbg[1];
+                    //First and second IN reports was still not transferred to host but third packet has arrived.
+                    //Check if we can just add data to tail of second packet.
+                    if ((inputDataLen2 + minlen) <= REWASD_GIMX_MAX_PAYLOAD_SIZE_EP)
+                    {
+                        target_buf = input_buf2 + inputDataLen2;
 
-                    dbg[0] = 0x33;
+                        combine = true;
+                    }
+                }
+                else if (inputDataLen1)
+                {
+                    //First IN report was still not transferred to host but second packet has arrived.
+                    //Check if we can just add data to tail of first packet.
+                    if ((inputDataLen1 + minlen) <= REWASD_GIMX_MAX_PAYLOAD_SIZE_EP)
+                    {
+                        target_buf = input_buf1 + inputDataLen1;
 
-                    send_buffer_with_crc(REWASD_GIMX_PACKET_TYPE_DEBUG + sizeof(dbg), dbg, sizeof(dbg));
+                        combine = true;
+                    }
+                }
+            }
+
+            if (!combine)
+            {
+                if (inputDataLen2)
+                {//First and second IN reports was still not transferred to host but third packet has arrived.
+                    //Copy data of second packet to current (its data will be lost) and prepare new data in input_buf2.
+                    //So if reWASD sends reports faster than the host retrieves them, then only 2 last actual IN reports will be kept.
+                    memcpy(input_buf1, input_buf2, inputDataLen2);
+
+                    inputDataLen1 = inputDataLen2;
+
+                    inputDataLen2 = 0;
                 }
 
-                //Copy data of second packet to current (its data will be lost) and prepare new data in input_buf2.
-                //So if reWASD sends reports faster than the host retrieves them, then only 2 last actual IN reports will be kept.
-                memcpy(input_buf1, input_buf2, inputDataLen2);
-
-                inputDataLen1 = inputDataLen2;
-
-                inputDataLen2 = 0;
-            }
-
-            if (inputDataLen1)
-            {
-                //Prepare IN report in the second buffer because the first one is still not transferred.
-                target_buf = input_buf2;
-            }
-            else
-            {
-                //Prepare IN report in the first buffer directly as it has no data pending.
-                target_buf = input_buf1;
+                if (inputDataLen1)
+                {
+                    //Prepare IN report in the second buffer because the first one is still not transferred.
+                    target_buf = input_buf2;
+                }
+                else
+                {
+                    //Prepare IN report in the first buffer directly as it has no data pending.
+                    target_buf = input_buf1;
+                }
             }
         }
         else if (Cmd >= REWASD_GIMX_PACKET_TYPE_CONTROL &&
@@ -370,8 +414,7 @@ void SendNextInput(void)
 
                 if (Cmd >= REWASD_GIMX_PACKET_TYPE_CONTROL)
                 {//CONTROL reply has arrived
-                    if (USB_DeviceState == DEVICE_STATE_Configured &&
-                        control_sequence == control_buf[0] &&
+                    if (control_sequence == control_buf[0] &&
                         waiting_control_reply &&
                         !memcmp(control_buf + 1, &USB_ControlRequest, sizeof(USB_ControlRequest)))
                     {
@@ -408,13 +451,27 @@ void SendNextInput(void)
                 }
                 else
                 {//IN
-                    if (inputDataLen1)
-                    {//update length of second buffer
-                        inputDataLen2 = minlen;
+                    if (combine)
+                    {
+                        if (inputDataLen2)
+                        {//update length of second buffer
+                            inputDataLen2 += minlen;
+                        }
+                        else
+                        {//update length of first buffer
+                            inputDataLen1 += minlen;
+                        }
                     }
                     else
-                    {//update length of first buffer
-                        inputDataLen1 = minlen;
+                    {
+                        if (inputDataLen1)
+                        {//update length of second buffer
+                            inputDataLen2 = minlen;
+                        }
+                        else
+                        {//update length of first buffer
+                            inputDataLen1 = minlen;
+                        }
                     }
                 }
 
@@ -426,13 +483,12 @@ void SendNextInput(void)
                 if (use_debug)
                 {
                     //Send debug packet to indicate bad CRC
-                    uint8_t dbg[3];
+                    uint8_t dbg[2];
 
                     dbg[0] = 0x22;
                     dbg[1] = Cmd;
-                    dbg[2] = receive_start;
 
-                    send_buffer_with_crc(REWASD_GIMX_PACKET_TYPE_DEBUG + sizeof(dbg), dbg, sizeof(dbg));
+                    send_buffer_with_crc(REWASD_GIMX_PACKET_TYPE_DEBUG, dbg, sizeof(dbg));
                 }
 
                 receive_start++;
@@ -446,13 +502,12 @@ void SendNextInput(void)
             if (use_debug)
             {
                 //Send debug packet to indicate unknown command
-                uint8_t dbg[3];
+                uint8_t dbg[2];
 
                 dbg[0] = 0x11;
                 dbg[1] = Cmd;
-                dbg[2] = receive_start;
 
-                send_buffer_with_crc(REWASD_GIMX_PACKET_TYPE_DEBUG + sizeof(dbg), dbg, sizeof(dbg));
+                send_buffer_with_crc(REWASD_GIMX_PACKET_TYPE_DEBUG, dbg, sizeof(dbg));
             }
 
             receive_start++;
@@ -641,9 +696,7 @@ void SetupHardware(void)
                     {
                         minlen = header->wTotalLength - desc_received;
                     }
-
                 }
-
                 else
                 {
                     minlen = sizeof(REWASD_GIMX_DESCRIPTOR_HEADER);
@@ -670,11 +723,6 @@ void SetupHardware(void)
 
                         desc_received += minlen;
 
-                        if (header->flags & REWASD_GIMX_FLAG_DEBUG)
-                        {
-                            use_debug = true;
-                        }
-
                         if (header->wTotalLength < sizeof(REWASD_GIMX_DESCRIPTOR_HEADER) || header->wTotalLength > REWASD_GIMX_MAX_DESCRIPTORS_SIZE)
                         {
                             desc_received = 0;
@@ -683,6 +731,11 @@ void SetupHardware(void)
                         {
                             if (header->wTotalLength == desc_received)
                             {
+                                if (header->flags & REWASD_GIMX_FLAG_DEBUG)
+                                {
+                                    use_debug = true;
+                                }
+
                                 started = true;//exit this loop and start USB
                             }
                         }
