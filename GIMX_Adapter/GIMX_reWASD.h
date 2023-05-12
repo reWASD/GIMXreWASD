@@ -13,7 +13,7 @@
 *    reWASD team wants to express special thanks to Mathieu Laurendeau for his hard work on GIMX project and developing this adapter!
 *    Now reWASD is an alternative way to use this adapter and give more options to users.
 *
-*    (C) 2020-2022 Disc Soft Ltd.
+*    (C) 2020-2023 Disc Soft FZE LLC.
 */
 
 #ifndef REWASD_GIMX_PROTOCOL_H_
@@ -59,7 +59,7 @@ typedef struct _REWASD_GIMX_DESCRIPTOR_INDEX {
 //This header is transmitted by reWASD on first REWASD_GIMX_PACKET_TYPE_DESCRIPTORS packet.
 //The header is followed by descriptors.
 typedef struct _REWASD_GIMX_DESCRIPTOR_HEADER {
-    //Total size of data incuding this header and all descriptors.
+    //Total size of data including this header and all descriptors.
     //It should not exceed REWASD_GIMX_MAX_DESCRIPTORS_SIZE.
     uint16_t wTotalLength;
     uint8_t  InEndpoint;

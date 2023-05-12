@@ -16,7 +16,7 @@ Now reWASD is an alternative way to use this adapter and give more options to us
 The code is based on the original serialusb project by Mathieu Laurendeau (see https://github.com/matlo/serialusb), but was rewritten from scratch to optimize it for reWASD. 
 With this firmware adapter works like USB proxy and reWASD can load any descriptors to it and emulate almost any gamepad. 
 CRC checking was added to make it more robust and many other enhancements have been made, especially ISR offloading and asynchronous processing of CONTROL requests. 
-It is allowed to modify this code and adapt to other architectures, provided Disc Soft Ltd is informed about changes and compatibility with existing firmware is maintained at the protocol level.
+It is allowed to modify this code and adapt to other architectures, provided Disc Soft FZE LLC is informed about changes and compatibility with existing firmware is maintained at the protocol level.
 
 ## Requirements
 
