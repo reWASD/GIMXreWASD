@@ -1,6 +1,6 @@
 /*
 *    GIMX adapter firmware for reWASD.
-*    (C) 2020-2025 Disc Soft FZE LLC.
+*    (C) 2020-2026 Disc Soft Limited.
 *
 * The code is based on the original serialusb project by Mathieu Laurendeau (see https://github.com/matlo/serialusb),
 * but was rewritten from scratch to optimize it for reWASD.
